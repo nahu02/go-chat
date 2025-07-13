@@ -1,11 +1,17 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 
 	"github.com/gorilla/websocket"
 )
+
+type Message struct {
+	From    string `json:"from"`
+	Message string `json:"message"`
+}
 
 func wsHandler(respWriter http.ResponseWriter, req *http.Request) {
 	// Upgrade incoming to websocket
@@ -24,17 +30,21 @@ func handleConnection(conn *websocket.Conn) {
 	defer conn.Close() // When the function returns, close the connection
 
 	for { // Listen for incoming messages (inf. loop)
-		_, message, readingErr := conn.ReadMessage()
+		var message Message
+		readingErr := conn.ReadJSON(&message)
 
 		if readingErr != nil {
 			log.Println("Error reading message:", readingErr)
 			break
 		}
 
-		log.Println("Recieved message:", string(message))
+		log.Printf("Recieved message: %+v", message)
 
 		response := message
-		writingErr := conn.WriteMessage(websocket.TextMessage, response)
+		response.From = "Server"
+		response.Message = fmt.Sprintf("'%s' said: %s", message.From, message.Message)
+
+		writingErr := conn.WriteJSON(response)
 		if writingErr != nil {
 			log.Println("Error writing message:", writingErr)
 			break
