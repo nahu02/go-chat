@@ -17,6 +17,10 @@ func wsHandler(respWriter http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	go handleConnection(conn)
+}
+
+func handleConnection(conn *websocket.Conn) {
 	defer conn.Close() // When the function returns, close the connection
 
 	for { // Listen for incoming messages (inf. loop)
