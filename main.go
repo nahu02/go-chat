@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"slices"
 
 	"github.com/gorilla/websocket"
 )
@@ -13,21 +14,44 @@ type Message struct {
 	Message string `json:"message"`
 }
 
-func wsHandler(respWriter http.ResponseWriter, req *http.Request) {
+var roomClients = make(map[string][]*websocket.Conn)
+
+func wsUpgrader(respWriter http.ResponseWriter, req *http.Request) (*websocket.Conn, error) {
 	// Upgrade incoming to websocket
 	var upgrader = websocket.Upgrader{ /*could set CrossOrigin here*/ }
-	conn, err := upgrader.Upgrade(respWriter, req, nil)
+	return upgrader.Upgrade(respWriter, req, nil)
+}
 
-	if err != nil {
-		log.Println("Error upgrading connection:", err)
+func roomHandler(respWriter http.ResponseWriter, req *http.Request) {
+	conn, upgradeErr := wsUpgrader(respWriter, req)
+
+	if upgradeErr != nil {
+		log.Println("Error upgrading connection to websocket:", upgradeErr)
 		return
 	}
 
-	go handleConnection(conn)
+	room := req.PathValue("roomId")
+
+	go handleRoomConnection(conn, room)
 }
 
-func handleConnection(conn *websocket.Conn) {
-	defer conn.Close() // When the function returns, close the connection
+func removeFromRoom(roomId string, conn *websocket.Conn) error {
+	for i, client := range roomClients[roomId] {
+		if client == conn {
+			roomClients[roomId] = slices.Delete(roomClients[roomId], i, i+1)
+			return nil
+		}
+	}
+	return fmt.Errorf("conn '%+v' not found in roomClients[%s]: %v", conn, roomId, roomClients[roomId])
+}
+
+func handleRoomConnection(conn *websocket.Conn, roomId string) {
+	defer func() {
+		_ = removeFromRoom(roomId, conn)
+		conn.Close()
+	}()
+
+	roomClients[roomId] = append(roomClients[roomId], conn)
 
 	for { // Listen for incoming messages (inf. loop)
 		var message Message
@@ -38,22 +62,24 @@ func handleConnection(conn *websocket.Conn) {
 			break
 		}
 
-		log.Printf("Recieved message: %+v", message)
+		log.Printf("[Room %s] Recieved message: %+v", roomId, message)
 
 		response := message
-		response.From = "Server"
-		response.Message = fmt.Sprintf("'%s' said: %s", message.From, message.Message)
+		// response.From = "Room " + roomId
+		// response.Message = fmt.Sprintf("'%s' said: %s", message.From, message.Message)
 
-		writingErr := conn.WriteJSON(response)
-		if writingErr != nil {
-			log.Println("Error writing message:", writingErr)
-			break
+		for _, roomParticipant := range roomClients[roomId] {
+			writingErr := roomParticipant.WriteJSON(response)
+			if writingErr != nil {
+				log.Printf("Error writing message for conn '%v' in room '%s':%v", roomParticipant, roomId, writingErr)
+				continue
+			}
 		}
 	}
 }
 
 func main() {
-	http.HandleFunc("/ws", wsHandler)
+	http.HandleFunc("/chatroom/{roomId}", roomHandler)
 
 	log.Println("Starting server on port 8000...")
 	err := http.ListenAndServe(":8000", nil)
