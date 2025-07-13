@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Go WebSocket Chatroom</title>
+
+    <!-- Terminal.css – simple, class-less "retro terminal" styles -->
+    <link rel="stylesheet" href="terminal.css">
+</head>
+
+<body>
+
+    <h1>WebSocket Chatroom</h1>
+    <p><em>Lightweight UI <a
+                href="https://www.perplexity.ai/search/go-package-main-import-fmt-log-ateSl.UhRj6.7juJAlpcLg?2=d">generated
+                by AI</a> &nbsp;—&nbsp; styled by <a href="https://panr.github.io/terminal-css/">Terminal.css</a></em>
+    </p>
+
+    <section id="setup">
+        <h3>Join a Room</h3>
+        <label>Username:
+            <input id="userInput" type="text" placeholder="e.g. Ada" required>
+        </label>
+        <br><br>
+        <label>Room&nbsp;ID:
+            <input id="roomInput" type="text" placeholder="e.g. 123" required>
+        </label>
+        <br><br>
+        <button id="joinBtn">Join room</button>
+    </section>
+
+    <section id="chat" hidden>
+        <div id="roomHeader">
+            <h2 id="roomTitle">Room: <span id="currentRoom"></span></h2>
+            <p>Connected as: <strong id="currentUser"></strong></p>
+        </div>
+
+        <div class="chatbox" id="chatBox"></div>
+
+        <div class="input-group">
+            <input id="msgInput" type="text" placeholder="Type your message and press Enter">
+            <button id="sendBtn">Send</button>
+            <button id="leaveBtn">Leave</button>
+        </div>
+    </section>
+
+    <script>
+        let ws = null, username = '', currentRoom = '';
+
+        function print(msgObj, system = false) {
+            const box = document.getElementById('chatBox');
+            const line = document.createElement('div');
+            line.className = system ? 'system' : '';
+            line.innerHTML = system
+                ? msgObj.message
+                : `<span class="from">${msgObj.from}</span>: ${msgObj.message}`;
+            box.appendChild(line);
+            box.scrollTop = box.scrollHeight;
+        }
+
+        document.getElementById('joinBtn').onclick = () => {
+            const userField = document.getElementById('userInput');
+            const roomField = document.getElementById('roomInput');
+            username = userField.value.trim();
+            const room = roomField.value.trim();
+            if (!username || !room) { alert('Fill in username and room.'); return; }
+
+            currentRoom = room;
+
+            // Close existing connection if any (without showing disconnected message)
+            if (ws) {
+                ws.onclose = null; // Remove the onclose handler to avoid disconnected message
+                ws.close();
+            }
+
+            const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+            ws = new WebSocket(`${proto}://${location.host}/chatroom/${room}`);
+
+            ws.onopen = () => {
+                // Update UI with current room and user info
+                document.getElementById('currentRoom').textContent = room;
+                document.getElementById('currentUser').textContent = username;
+
+                // Show chat interface
+                document.getElementById('setup').hidden = true;
+                document.getElementById('chat').hidden = false;
+                document.getElementById('msgInput').focus();
+
+                // Clear chat box for new room
+                document.getElementById('chatBox').innerHTML = '';
+
+                print({ message: `🔌 Connected to room` }, true);
+            };
+
+            ws.onmessage = ev => print(JSON.parse(ev.data));
+
+            // Only show disconnected message if it's an unexpected disconnection
+            ws.onclose = () => {
+                if (document.getElementById('chat').hidden === false) {
+                    print({ message: '🔌 Connection lost' }, true);
+                }
+            };
+
+            ws.onerror = err => console.error(err);
+        };
+
+        document.getElementById('sendBtn').onclick = sendMessage;
+        document.getElementById('msgInput').onkeydown = e => {
+            if (e.key === 'Enter') sendMessage();
+        };
+
+        function sendMessage() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return alert('Not connected.');
+            const input = document.getElementById('msgInput');
+            const text = input.value.trim();
+            if (!text) return;
+            ws.send(JSON.stringify({ from: username, message: text }));
+            input.value = '';
+        }
+
+        document.getElementById('leaveBtn').onclick = () => {
+            if (ws) {
+                ws.onclose = null; // Prevent disconnected message when leaving intentionally
+                ws.close();
+            }
+            document.getElementById('setup').hidden = false;
+            document.getElementById('chat').hidden = true;
+            document.getElementById('chatBox').innerHTML = '';
+            document.getElementById('userInput').focus();
+        };
+    </script>
+
+</body>
+
+</html>

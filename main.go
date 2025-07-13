@@ -80,9 +80,11 @@ func handleRoomConnection(conn *websocket.Conn, roomId string) {
 
 func main() {
 	http.HandleFunc("/chatroom/{roomId}", roomHandler)
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "public/index.html") })
+	http.HandleFunc("/terminal.css", func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "public/terminal.css") })
 
-	log.Println("Starting server on port 8000...")
-	err := http.ListenAndServe(":8000", nil)
+	log.Println("Starting server on port 8080...")
+	err := http.ListenAndServe(":8080", nil)
 
 	if err != nil {
 		log.Println("Error starting http server:", err)
