@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"slices"
+	"sync"
 
 	"github.com/gorilla/websocket"
 )
@@ -15,6 +16,7 @@ type Message struct {
 }
 
 var roomClients = make(map[string][]*websocket.Conn)
+var roomClientsMutex sync.Mutex
 
 func wsUpgrader(respWriter http.ResponseWriter, req *http.Request) (*websocket.Conn, error) {
 	// Upgrade incoming to websocket
@@ -36,6 +38,9 @@ func roomHandler(respWriter http.ResponseWriter, req *http.Request) {
 }
 
 func removeFromRoom(roomId string, conn *websocket.Conn) error {
+	roomClientsMutex.Lock()
+	defer roomClientsMutex.Unlock()
+
 	for i, client := range roomClients[roomId] {
 		if client == conn {
 			roomClients[roomId] = slices.Delete(roomClients[roomId], i, i+1)
@@ -51,7 +56,9 @@ func handleRoomConnection(conn *websocket.Conn, roomId string) {
 		conn.Close()
 	}()
 
+	roomClientsMutex.Lock()
 	roomClients[roomId] = append(roomClients[roomId], conn)
+	roomClientsMutex.Unlock()
 
 	for { // Listen for incoming messages (inf. loop)
 		var message Message
@@ -68,6 +75,7 @@ func handleRoomConnection(conn *websocket.Conn, roomId string) {
 		// response.From = "Room " + roomId
 		// response.Message = fmt.Sprintf("'%s' said: %s", message.From, message.Message)
 
+		roomClientsMutex.Lock()
 		for _, roomParticipant := range roomClients[roomId] {
 			writingErr := roomParticipant.WriteJSON(response)
 			if writingErr != nil {
@@ -75,6 +83,7 @@ func handleRoomConnection(conn *websocket.Conn, roomId string) {
 				continue
 			}
 		}
+		roomClientsMutex.Unlock()
 	}
 }
 
